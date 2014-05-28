@@ -48,6 +48,7 @@ module type PARAMS = sig
   val do_finalize : bool
   val do_decrypt : bool
   val ballot_file : string option
+  val trustee_id : int Lazy.t
   include ELECTION_PARAMS
 end
 
@@ -62,6 +63,7 @@ let parse_args () = begin
   let do_finalize = ref false in
   let do_decrypt = ref false in
   let ballot_file = ref None in
+  let trustee_id = ref None in
 
   let speclist = Arg.([
     "--dir", String (fun s -> dir := s), "path to election files";
@@ -70,6 +72,7 @@ let parse_args () = begin
         if Filename.is_relative s then Filename.concat initial_dir s else s
       in sk_file := Some fname
     ), "path to private key";
+    "--trustee-id", Int (fun i -> trustee_id := Some i), "trustee ID (between 1 and l)";
   ]) in
 
   let usage_msg =
@@ -124,6 +127,14 @@ let parse_args () = begin
     let do_finalize = !do_finalize
     let do_decrypt = !do_decrypt
     let ballot_file = !ballot_file
+
+    let trustee_id =
+      lazy (
+        match !trustee_id with
+        | Some x -> x
+        | None -> failwith "missing trustee_id"
+      )
+
     include (val params : ELECTION_PARAMS)
   end in
 
@@ -139,20 +150,10 @@ module Run (P : PARAMS) : EMPTY = struct
 
   (* Load and check trustee keys, if present *)
 
-  module KG = Election.MakeSimpleDistKeyGen(G)(M);;
-
   let public_keys_with_pok =
     load_from_file (
       trustee_public_key_of_string G.read
     ) "public_keys.jsons" |> option_map Array.of_list
-
-  let () =
-    match public_keys_with_pok with
-    | Some pks ->
-      assert (Array.forall KG.check pks);
-      let y' = KG.combine pks in
-      assert G.(params.e_public_key =~ y')
-    | None -> ()
 
   let public_keys =
     option_map (
@@ -239,15 +240,16 @@ module Run (P : PARAMS) : EMPTY = struct
   let () = if do_decrypt then
     match sk_file with
     | Some fn ->
-      (match load_from_file (number_of_string) fn with
-        | Some [sk] ->
+      (match load_from_file secret_share_of_string fn with
+        | Some [{secret_share}] ->
+          let sk = secret_share in
           let pk = G.(g **~ sk) in
           if Array.forall (fun x -> not G.(x =~ pk)) pks then (
             Printf.eprintf "Warning: your key is not present in public_keys.jsons!\n";
           );
           let tally = Lazy.force encrypted_tally in
           let factor =
-            E.compute_factor tally sk ()
+            E.compute_factor tally sk (Lazy.force trustee_id) ()
           in
           assert (E.check_factor tally pk factor);
           print_endline (string_of_partial_decryption G.write factor)
@@ -274,8 +276,17 @@ module Run (P : PARAMS) : EMPTY = struct
       ) "partial_decryptions.jsons" |> option_map Array.of_list in
       match factors with
       | Some factors ->
+        if Array.length factors < e.e_params.e_threshold then
+          Printf.ksprintf failwith
+            "%d partial decryptions are needed, only %d are present"
+            e.e_params.e_threshold (Array.length factors);
+        let factors = Array.sub factors 0 e.e_params.e_threshold in
         let tally = Lazy.force encrypted_tally in
-        assert (Array.forall2 (E.check_factor tally) pks factors);
+        assert (
+          Array.forall (fun factor ->
+            E.check_factor tally pks.(factor.trustee_id-1) factor
+          ) factors;
+        );
         let result = E.combine_factors (M.cardinal ()) tally factors in
         assert (E.check_result e result);
         if do_finalize then (

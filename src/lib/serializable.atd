@@ -47,9 +47,20 @@ type disjunctive_proof = proof list <ocaml repr="array">
 (** {2 Trustees} *)
 
 type 'a trustee_public_key = {
-  pok : proof;
   public_key : 'a;
 } <ocaml field_prefix="trustee_">
+
+type 'a public_coeffs = {
+  public_coeffs : 'a list;
+}
+
+type shared_secret = {
+  shared_secret : number;
+}
+
+type secret_share = {
+  secret_share : number;
+}
 
 (** {2 Elections} *)
 
@@ -80,6 +91,8 @@ type 'a params = {
   description : string;
   name : string;
   public_key : 'a;
+  trustees : int;
+  threshold : int;
   questions : question list <ocaml repr="array">;
   uuid : uuid;
   short_name : string;
@@ -118,6 +131,7 @@ type 'a ballot = {
 }
 
 type 'a partial_decryption = {
+  trustee_id : int;
   decryption_factors : 'a list <ocaml repr="array"> list <ocaml repr="array">;
   decryption_proofs : proof list <ocaml repr="array"> list <ocaml repr="array">;
 }

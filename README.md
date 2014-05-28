@@ -56,21 +56,19 @@ Trustee's guide
 
 ### Key generation
 
-To generate a keypair, run:
+This version supports a threshold cryptosystem where only a subset of
+the trustees are needed to decrypt the election outcome. The key
+generation is an interactive protocol between all trustees.
 
-    belenios-tool trustee-keygen
-
-It will generate two files, `XXXXXXXX.public` and `XXXXXXXX.private`,
-containing respectively the public and the private key. Send the
-public key file to the server administrator, and keep the private key
-with extreme care.
+The `demo/demo.sh` script executes the key generation protocol with 3
+trustees, where only 2 of them are needed for decryption.
 
 ### Partial decryption
 
 To compute your decryption share, set `/path/to/election` up as
 described in the _Voter's guide_ section above, and run:
 
-    belenios-tool election --dir /path/to/election --privkey /path/to/privkey decrypt > partial_decryption.json
+    belenios-tool election --dir /path/to/election --privkey /path/to/privkey decrypt --trustee-id i > partial_decryption.json
 
 and send `partial_decryption.json` to the election
 administrator.
@@ -150,8 +148,9 @@ accepted by the server.
  6.  Edit `$BELENIOS/demo/templates/election.json`.
  7.  Run: `belenios-tool mkelection --uuid $UUID --group
      $BELENIOS/demo/groups/default.json --template
-     $BELENIOS/demo/templates/election.json`. It should generate
-     `election.json` in the current directory.
+     $BELENIOS/demo/templates/election.json --trustees 3
+     --threshold 2` (`2` and `3` are given as examples). It should
+     generate `election.json` in the current directory.
  8.  Create a `$DIR/metadata.json` file. Its format is currently
      undocumented and subject to future evolution, but you can get
      inspiration from `$BELENIOS/demo/data/*/metadata.json`.
@@ -181,9 +180,12 @@ to be able to access the administration page specific to the election.
     the first step above. The whole set will enable universal
     verifiability.
 
-Note: `partial_decryptions.jsons` is a temporary file whose contents
-is embedded in `result.json`, so there is no need to keep it.
-
+Note: after the tally is complete, `partial_decryptions.jsons` is no
+longer needed to perform verifications; `result.json` is
+sufficient. However, only the partial decryptions that were actually
+used are recorded in `result.json`. You might want to keep
+`partial_decryptions.jsons` to e.g. check that all trustees
+contributed to the tally.
 
 Server administrator's guide
 ----------------------------

@@ -233,7 +233,7 @@ module type ELECTION = sig
       private key share and the encrypted tally, and contains a
       cryptographic proof that he or she didn't cheat. *)
 
-  val compute_factor : ciphertext -> private_key -> factor m
+  val compute_factor : ciphertext -> private_key -> int -> factor m
 
   val check_factor : ciphertext -> public_key -> factor -> bool
   (** [check_factor c pk f] checks that [f], supposedly submitted by a

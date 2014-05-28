@@ -197,3 +197,5 @@ let save_to filename writer x =
   close_out oc;;
 
 module SMap = Map.Make(String)
+
+let rec seq i j = if i <= j then i :: seq (i+1) j else []

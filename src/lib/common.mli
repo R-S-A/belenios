@@ -64,3 +64,5 @@ val pbkdf2 :
 val save_to : string -> (Bi_outbuf.t -> 'a -> unit) -> 'a -> unit
 
 module SMap : Map.S with type key = string
+
+val seq : int -> int -> int list

@@ -227,17 +227,12 @@ module Make (C : CONFIG) : SITE = struct
         let r, do_register = register_election params web_params in
         let module R = (val r : Web_election.REGISTRABLE) in
         let module G = R.W.G in
-        let module KG = Election.MakeSimpleDistKeyGen (G) (Random) in
         let public_keys = Lwt_io.lines_of_file f.f_public_keys in
         lwt pks = Lwt_stream.(
           clone public_keys |>
           map (trustee_public_key_of_string G.read) |>
           to_list >>= wrap1 Array.of_list
         ) in
-        if not (Array.forall KG.check pks) then
-          failwith "Public keys are invalid.";
-        if not G.(R.W.election.e_params.e_public_key =~ KG.combine pks) then
-          failwith "Public keys mismatch with election public key.";
         let public_creds = Lwt_io.lines_of_file f.f_public_creds in
         lwt () = Lwt_stream.(
           clone public_creds |>

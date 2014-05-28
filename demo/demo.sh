@@ -24,6 +24,7 @@ cd $DIR
 # Common options
 uuid="--uuid $UUID"
 group="--group $BELENIOS/demo/groups/default.json"
+threshold="--trustees 3 --threshold 2"
 
 # Generate credentials
 belenios-tool credgen $uuid $group --count 3
@@ -31,13 +32,17 @@ mv *.pubcreds public_creds.txt
 mv *.privcreds private_creds.txt
 
 # Generate trustee keys
-belenios-tool trustee-keygen $group
-belenios-tool trustee-keygen $group
-belenios-tool trustee-keygen $group
-cat *.pubkey > public_keys.jsons
+belenios-tool trustee-keygen $group $threshold --trustee-id 1
+belenios-tool trustee-keygen $group $threshold --trustee-id 2
+belenios-tool trustee-keygen $group $threshold --trustee-id 3
+
+# Second step (check that nobody cheated)
+belenios-tool trustee-keygen $group $threshold --trustee-id 1 --second-step
+belenios-tool trustee-keygen $group $threshold --trustee-id 2 --second-step
+belenios-tool trustee-keygen $group $threshold --trustee-id 3 --second-step
 
 # Generate election parameters
-belenios-tool mkelection $uuid $group --template $BELENIOS/demo/templates/election.json
+belenios-tool mkelection $uuid $group --template $BELENIOS/demo/templates/election.json $threshold
 
 header "Simulate votes"
 
@@ -49,8 +54,8 @@ mv ballots.tmp ballots.jsons
 
 header "Perform decryption"
 
-for u in *.privkey; do
-    belenios-tool election --privkey $u decrypt
+for u in `seq 1 3`; do
+    belenios-tool election --privkey secret_share_$u.json decrypt --trustee-id $u
     echo >&2
 done > partial_decryptions.tmp
 mv partial_decryptions.tmp partial_decryptions.jsons

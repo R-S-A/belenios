@@ -60,48 +60,6 @@ module MakeSimpleMonad (G : GROUP) = struct
   let cardinal () = List.length !ballots
 end
 
-(** Distributed key generation *)
-
-module MakeSimpleDistKeyGen (G : GROUP) (M : RANDOM) = struct
-  open G
-  open M
-
-  let ( >>= ) = bind
-  let ( / ) x y = x *~ invert y
-
-  (** Fiat-Shamir non-interactive zero-knowledge proofs of
-      knowledge *)
-
-  let fs_prove gs x oracle =
-    random q >>= fun w ->
-    let commitments = Array.map (fun g -> g **~ w) gs in
-    let challenge = oracle commitments in
-    let response = Z.((w + x * challenge) mod q) in
-    return {challenge; response}
-
-  let generate_and_prove () =
-    random q >>= fun x ->
-    let trustee_public_key = g **~ x in
-    let zkp = "pok|" ^ G.to_string trustee_public_key ^ "|" in
-    fs_prove [| g |] x (G.hash zkp) >>= fun trustee_pok ->
-    return (x, {trustee_pok; trustee_public_key})
-
-  let check {trustee_pok; trustee_public_key = y} =
-    G.check y &&
-    let {challenge; response} = trustee_pok in
-    check_modulo q challenge &&
-    check_modulo q response &&
-    let commitment = g **~ response / (y **~ challenge) in
-    let zkp = "pok|" ^ G.to_string y ^ "|" in
-    challenge =% G.hash zkp [| commitment |]
-
-  let combine pks =
-    Array.fold_left (fun y {trustee_public_key; _} ->
-      y *~ trustee_public_key
-    ) G.one pks
-
-end
-
 (** Homomorphic elections *)
 
 module MakeElection (G : GROUP) (M : RANDOM) = struct
@@ -363,12 +321,12 @@ module MakeElection (G : GROUP) (M : RANDOM) = struct
   let check_ciphertext c =
     Array.fforall (fun {alpha; beta} -> G.check alpha && G.check beta) c
 
-  let compute_factor c x =
+  let compute_factor c x trustee_id =
     if check_ciphertext c then (
       let res = Array.mmap (eg_factor x) c in
       let decryption_factors, decryption_proofs = Array.ssplit res in
       sswap decryption_proofs >>= fun decryption_proofs ->
-      return {decryption_factors; decryption_proofs}
+      return {trustee_id; decryption_factors; decryption_proofs}
     ) else (
       fail (Invalid_argument "Invalid ciphertext")
     )
@@ -388,10 +346,23 @@ module MakeElection (G : GROUP) (M : RANDOM) = struct
 
   type result = elt Serializable_t.result
 
+  let lagrange set j =
+    Array.fold_left (fun accu k ->
+      if j = k
+      then accu
+      else (
+        let zk = Z.of_int k and zj = Z.of_int j in
+        let k_minus_j = Z.((G.q + zk - zj) mod q) in
+        Z.((accu * zk * invert k_minus_j G.q) mod q)
+      )
+    ) Z.one set
+
   let combine_factors num_tallied encrypted_tally partial_decryptions =
     let dummy = Array.mmap (fun _ -> G.one) encrypted_tally in
+    let set = Array.map (fun x -> x.trustee_id) partial_decryptions in
     let factors = Array.fold_left (fun a b ->
-      Array.mmap2 ( *~ ) a b.decryption_factors
+      let lagrange = lagrange set b.trustee_id in
+      Array.mmap2 (fun x y -> x *~ (y **~ lagrange)) a b.decryption_factors
     ) dummy partial_decryptions in
     let results = Array.mmap2 (fun {beta; _} f ->
       beta / f
@@ -418,11 +389,15 @@ module MakeElection (G : GROUP) (M : RANDOM) = struct
     check_ciphertext encrypted_tally &&
     (match e.e_pks with
     | Some pks ->
-      Array.forall2 (check_factor encrypted_tally) pks partial_decryptions
+      Array.forall (fun factor ->
+        check_factor encrypted_tally pks.(factor.trustee_id-1) factor
+      ) partial_decryptions
     | None -> false) &&
     let dummy = Array.mmap (fun _ -> G.one) encrypted_tally in
+    let set = Array.map (fun x -> x.trustee_id) partial_decryptions in
     let factors = Array.fold_left (fun a b ->
-      Array.mmap2 ( *~ ) a b.decryption_factors
+      let lagrange = lagrange set b.trustee_id in
+      Array.mmap2 (fun x y -> x *~ (y **~ lagrange)) a b.decryption_factors
     ) dummy partial_decryptions in
     let results = Array.mmap2 (fun {beta; _} f ->
       beta / f
